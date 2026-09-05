@@ -1,0 +1,24 @@
+# Copy this file to ".env" and fill in your real values.
+# Never share this file or commit it to GitHub.
+
+# From the Discord Developer Portal > your app > Bot > Token
+DISCORD_TOKEN=MTU0NTQzNDAwMTQwNDIwNzE4Ng.GNf07z.fez09Urn7LLwnQ5-6WBlAkCYkoJ1RMAQCbuWhU
+
+# From https://console.groq.com/keys
+GROQ_API_KEY=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
+
+# Which Groq model to use. openai/gpt-oss-120b is a strong, cheap, general-purpose
+# default. For a faster/cheaper option try openai/gpt-oss-20b.
+# Full current list: https://console.groq.com/docs/models
+GROQ_MODEL=openai/gpt-oss-120b
+
+# The Discord channel ID where the bot replies without needing a mention.
+AI_CHANNEL_ID=your_ai_channel_id_here
+
+# Optional. While testing, paste your Discord server (guild) ID here so slash
+# commands update instantly instead of waiting up to an hour. Remove it (or
+# leave blank) once you deploy for real — global commands work everywhere.
+GUILD_ID=
+
+# Optional. How many recent messages to remember per user. Default: 20.
+MAX_HISTORY=20
