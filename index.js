@@ -1,6 +1,17 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
-const puppeteer = require('puppeteer');
+
+// Puppeteer v25+ ships as an ESM-only package, so it can't be loaded with a
+// top-level require() from this CommonJS file. It's loaded lazily via
+// dynamic import() inside takeScreenshot() instead, and cached after the
+// first call so later screenshots don't re-import it.
+let puppeteerModulePromise;
+function loadPuppeteer() {
+  if (!puppeteerModulePromise) {
+    puppeteerModulePromise = import('puppeteer').then((mod) => mod.default ?? mod);
+  }
+  return puppeteerModulePromise;
+}
 
 // ---------------------------------------------------------------------------
 // Config (all from environment variables — never hard-code secrets here)
@@ -236,6 +247,7 @@ async function callGroqVision(prompt, imageBase64) {
 // Website screenshot + rating
 // ---------------------------------------------------------------------------
 async function takeScreenshot(url) {
+  const puppeteer = await loadPuppeteer();
   const browser = await puppeteer.launch({
     headless: 'new',
     // --disable-dev-shm-usage avoids Chrome crashing in Railway's small /dev/shm.
