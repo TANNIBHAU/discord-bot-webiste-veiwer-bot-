@@ -123,10 +123,58 @@ function isOnCooldown(userId) {
   return false;
 }
 
-function trimForDiscord(text) {
-  const LIMIT = 2000; // Discord's hard message length limit
-  if (text.length <= LIMIT) return text;
-  return text.slice(0, LIMIT - 3) + '...';
+const DISCORD_LIMIT = 2000; // Discord's hard message length limit
+const MAX_MESSAGES = 3; // cap how many messages one reply can split into
+
+// Some Groq models (e.g. the vision model) emit their reasoning inside
+// <think>...</think> before the real answer. That reasoning ate up the
+// character budget and pushed the actual answer out of the message, so it
+// gets stripped before anything is sent to Discord.
+function stripThinking(text) {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+// Splits text into up to MAX_MESSAGES chunks of at most DISCORD_LIMIT chars
+// each, breaking on a newline or space near the limit when possible so words
+// don't get cut mid-way. If it still doesn't fit in MAX_MESSAGES chunks, the
+// last chunk is truncated with "...".
+function splitForDiscord(text) {
+  const chunks = [];
+  let remaining = text.trim();
+
+  while (remaining.length > DISCORD_LIMIT && chunks.length < MAX_MESSAGES - 1) {
+    let cut = remaining.lastIndexOf('\n', DISCORD_LIMIT);
+    if (cut < DISCORD_LIMIT * 0.5) cut = remaining.lastIndexOf(' ', DISCORD_LIMIT);
+    if (cut < DISCORD_LIMIT * 0.5) cut = DISCORD_LIMIT;
+    chunks.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+  }
+
+  if (remaining.length > DISCORD_LIMIT) {
+    remaining = remaining.slice(0, DISCORD_LIMIT - 3) + '...';
+  }
+  if (remaining) chunks.push(remaining);
+
+  return chunks;
+}
+
+// Sends a (possibly multi-chunk) reply to a normal text channel, in order.
+async function sendReply(channel, text) {
+  const chunks = splitForDiscord(stripThinking(text));
+  for (const chunk of chunks) {
+    await channel.send(chunk);
+  }
+}
+
+// Same idea but for slash-command interactions, where the first chunk has to
+// go through editReply (finishing the deferred reply) and any extra chunks
+// have to go through followUp instead of a plain channel.send.
+async function sendInteractionReply(interaction, text) {
+  const chunks = splitForDiscord(stripThinking(text));
+  await interaction.editReply(chunks[0]);
+  for (let i = 1; i < chunks.length; i++) {
+    await interaction.followUp(chunks[i]);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +324,7 @@ async function handleWebRequest(channel, url, question) {
     const imageBase64 = await takeScreenshot(url);
     const prompt = question ? buildDetectPrompt(question) : RATE_PROMPT;
     const reply = await callGroqVision(prompt, imageBase64);
-    await channel.send(trimForDiscord(reply));
+    await sendReply(channel, reply);
   } catch (err) {
     console.error('Web-rate request failed:', err);
     await channel.send('site load nahi hui ya AI brain crash ho gaya 😭 dobara try kar');
@@ -298,7 +346,7 @@ async function handleAIReply(channel, userId, rawMessage, isNsfwChannel) {
     await channel.sendTyping();
     const systemPrompt = isNsfwChannel ? SYSTEM_PROMPT : SAFE_SYSTEM_PROMPT;
     const reply = await callGroq(userId, content, systemPrompt);
-    await channel.send(trimForDiscord(reply));
+    await sendReply(channel, reply);
   } catch (err) {
     console.error('AI reply failed:', err);
     await channel.send('bro my AI brain just crashed for a sec 😭 try again');
@@ -422,7 +470,7 @@ client.on('interactionCreate', async (interaction) => {
     try {
       const systemPrompt = interaction.channel?.nsfw ? SYSTEM_PROMPT : SAFE_SYSTEM_PROMPT;
       const reply = await callGroq(interaction.user.id, userMessage, systemPrompt);
-      await interaction.editReply(trimForDiscord(reply));
+      await sendInteractionReply(interaction, reply);
     } catch (err) {
       console.error('AI reply failed:', err);
       await interaction.editReply('bro my AI brain just crashed for a sec 😭 try again');
